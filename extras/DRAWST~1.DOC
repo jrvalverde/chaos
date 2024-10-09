@@ -1,0 +1,372 @@
+Xref: unixg.ubc.ca alt.fractals:2849 bit.listserv.frac-l:1284
+Newsgroups: alt.fractals,bit.listserv.frac-l
+Path: unixg.ubc.ca!ubc-cs!destroyer!sol.ctr.columbia.edu!usc!rpi!batcomputer!reed!henson!news.u.washington.edu!milton.u.washington.edu!jesjones
+From: jesjones@milton.u.washington.edu (Jesse Jones)
+Subject: Fractal Paper #5: Draw Styles
+Message-ID: <1992Sep22.225517.13127@u.washington.edu>
+Summary: Discusses how to implement Potential, Distance Estimator, etc.
+Keywords: Fractal Draw Styles Mandella
+Sender: news@u.washington.edu (USENET News System)
+Organization: University of Washington, Seattle
+Date: Tue, 22 Sep 1992 22:55:17 GMT
+Lines: 359
+ 
+ 
+                      Fractal Drawing Styles 6.0
+                            by Jesse Jones
+ 
+ 
+ABOUT THIS FILE
+ 
+   This file discusses ten different ways to color fractals. Many of these
+methods are discussed in The Science of Fractal Images [1]. However the book 
+can be difficult to follow, hopefully the material below will be easier to 
+digest. All eight have been implemented in a program called Mandella for the 
+Macintosh.
+   
+   
+GENERATING FRACTALS
+ 
+   Typically fractals are generated using complex numbers. Every complex number 
+can be represented by a point on the plane. To generate a fractal we iterate 
+some formula, for example z := z^2 + c. For each iterate we'll get a new z 
+value. These points are called orbits.
+   Here z is a point in the plane and c is a complex constant. When this is
+iterated one of two things can happen: z can blow up to infinity or z can
+become periodic. If z never goes to infinity it is inside the fractal.
+   To simplify things we use a bailout value to see if z is headed for infinity 
+and a number called maxIter or hiCount. If the number of iterations exceeds
+maxIter we assume the point is periodic and therefore in the fractal.
+   After iterating a point we can color it based on the number of iterations
+or on the final z. Most fractal programs use the number of iterations to assign
+colors to points. This is called the "Level Set" method.
+ 
+ 
+THE DRAW STYLES
+ 
+(* The below constants are special count values. Unity is used for draw styles
+   that return a real number (say x). These numbers will be in the range 0 to
+   1. The count value is simply Unity*x. *)
+Constants
+   Unity = 10000;             
+   
+   maxCount = 65520;          (* hiCount <= maxCount *)
+   inSet    = 65521;          (* caught by period checker *)
+   inFil    = 65522;          (* distance estimator filament *)
+   noCount  = 65535;          (* no count value for point *)
+ 
+Variables
+   z        starts as a point in the complex plane and is then iterated
+   orbits   an array that holds the value of z for each iteration
+   count    the number of iterations
+   hiCount  the maximum number of iterations
+   bailout  the number used to determine if z has "blown up"
+ 
+1) Level Sets
+   This method uses the count value to index into the palette: index := 
+(NoColors*count)/hiCount + FirstColor. However this will produce poor results. 
+There are two problems with this approach: 1) If the image has been zoomed the 
+lowest count in the image could be quite large. This means that a possibly large
+portion of the palette is never used. 2) The higher count values cluster close 
+to  the set. This causes a large amount of the palette to be dedicated to a 
+very small area next to the fractal. This problem will become worse if the 
+hiCount is increased.
+ 
+   To alleviate these problems we can use three cutoffs: high, middle, and low. 
+The high cutoff will be used for the hiCount. If the count is between the low 
+and middle cutoffs we use the count value to index into the palette. if the 
+count is greater then the middle cutoff we use the last color in the palette. If
+the count is less then the low cutoff use some background color. Putting it all
+together we  have:
+      IF count < low THEN
+         index := BackColor;
+      ELSIF count >= high THEN
+         index := SetColor;
+      ELSIF count > middle THEN
+         index := LastColor;
+      ELSE
+         range := LONG(middle - low);
+         delta := LONG(count - low);
+         index := (delta*NoColors) DIV range + FirstColor;
+      END;
+   This is much better but we have only partially solved the problem with the
+counts clustering close to the fractal. To bring out the most detail we need to
+somehow use the bulk of the palette for the lower count values. One  possibility
+is to use a formula like this: newCount := hiCount*(count/hiCount)^(1/root).
+This formula will take a count from 0 to hiCount and return a new count value
+in the same range if root > 0. If root = 1 then newCount = count. If root > 1
+then the low counts account for the majority of newCounts. This is what we 
+want since the low counts will then be assigned to most of the palette. If
+root < 1 most of the newCounts come from the higher count values. This can
+sometimes be interesting. To integrate this with cutoffs we can write:
+         range := LONG(middle - low);
+         delta := LONG(count - low);
+         new := range*(delta/range)^(1/root);
+         index := (new*NoColors) DIV range + FirstColor;
+   Another idea is to allow the user to somehow draw a graph to control the
+count to palette mapping. An easy and powerful method is to use Bezier curves.
+The December 1986 Byte has a good article on Bezier curves.
+   
+   The rest of the drawing styles return real numbers (say x). To index into the
+palette the real number must be somehow scaled into a number from 0 to 1. Then
+the palette index is simply: index := (NoColors-1)*scale + FirstColor. To do the
+scaling we need to find the largest x. Then scale := x/maxX. In an interactive
+program maxX can sometimes be hard to find.
+   Many programs using the Level Set method store each count value in an array.
+This array can then be used to redraw the image (perhaps after a change in the
+root scaling). To integrate this with the other drawing styles we can multiply
+scale by some large number Unity. Then 0..Unity will be inside the palette. And 
+Unity+1 will be inside the set.
+   
+2) ColorSet
+   Here we color the fractal and leave everything outside the fractal black. To 
+get a color we use the final z value. This style works well with Julia type 
+fractals and period checking. The code looks like this:
+         IF count >= hiCount THEN
+            mag := z.r*z.r + z.i*z.i;
+            scale := mag - TRUNC(mag); (* ignore integer part *)
+            count := Unity*scale;
+         ELSE
+            count := 0;                (* use FirstColor *)          
+         END;              
+   
+3) Decomposition
+   In this style we treat z as a point in the plane and use the angle z makes
+with the x axis to index into the palette. In the Science of Fractal Images [1]
+they use "Binary Decomposition", i.e. they use only two colors. We will use
+all the colors.
+         IF count >= hiCount THEN
+            count := Unity+1;
+         ELSE
+            theta := ArcTan(z.i/z.r) + PI/2;
+            scale := theta/PI;
+            count := Unity*scale;
+         END;
+            
+4) Stalks
+   This method is due to Pickover. I found it in Computers and the Imagination 
+page 170. The idea is to color a point differently if either the real part or 
+imaginary part of an orbit are less then a small number (e.g. 0.01). The result
+is a standard looking image but with tendrils of varying widths and colors going
+every which way. The code I use in Mandella looks like this:
+         VAR
+            minZ   : REAL; (* ABS value of smallest component in each orbit *)
+            epsilon: REAL; (* A small number entered by the user. *)
+            
+         IF count < hiCount THEN
+            IF minZ < epsilon THEN
+               scale := minZ/epsilon
+               count := loCount + scale*(midCount - loCount);
+            END;
+         END;
+Note that the interior of the set could also be colored so that it has stalks. 
+            
+5) Continuous Potential
+   Here we use the magnitude of z and the count value to get a smoother image.
+The potential is calculated like this: pot := Ln(Mag(z))/(2^count). To scale
+the potential into the range [0..1] we need to find the largest potential:
+maxPot := Ln(bailout)/(2^loCount). Then scale := pot/maxPot. As count increases
+scale will go rapidly to zero. To smooth things out we will use a variable
+called slope. Using a large bailout value will also help matters (500 works well
+for the classic Mandelbrot fractal). The code follows:
+         IF count >= hiCount THEN
+            count := Unity+1;
+         ELSE
+            pot := Ln(Mag(z))/(2^count);
+            maxPot := Ln(bailout)/(2^low);
+            scale := pot/maxPot;
+            scale := scale^(1/slope);
+            scale := 1 - scale; (* shift high counts to the right of palette *)
+            count := Unity*scale;
+         END;
+            
+6) Distance Estimator
+   The distance estimator method is used to identify points that are close to 
+the set. The user inputs an epsilon that determines how close to the set points
+have to be before they are drawn (0.6 works fairly well for the entire 
+Mandelbrot Set). As the user zooms in epsilon should be decreased.
+   Pages 196-198 of the Science of Fractal Images [1] discuss the mathematics
+behind the distance estimator method. There are also some striking black and 
+white illustrations. I wasn't able to get anything that looked as good. I 
+suspect the higher resolutions used in the book makes a big difference with this
+method.
+   In Mandella 6.0 the Distance Estimator draws points close to the set using
+a special color. Points farther away are drawn using the LevelSet method. 
+Earlier versions used the distance to color points far from the set but I was 
+never happy with the results.
+         overflow := 1.0E32;
+         delta := epsilon*dx;          (* where dx is distance between pixels *)
+         IF count >= hiCount THEN
+            count := Unity+1;
+         ELSE
+            zPrime.r := 0;
+            zPrime.i := 0;
+            k := 1;
+            WHILE (k <= count) AND (ABS(zPrime.r) < overflow) 
+                               AND (ABS(zPrime.i) < overflow) DO
+               zPrime := Mult(orbits[k], zPrime);
+               zPrime.r := 2*zPrime.r + 1;
+               zPrime.i := 2*zPrime.i;
+               INC(k)
+            END;
+            IF k <= count THEN
+               count := inFil;               (* point is very close to set *) 
+            ELSE
+               mag1 := Sqrt(Mag(z));
+               mag2 := Sqrt(Mag(zPrime));
+               dist := Ln(mag1)*(mag1/mag2);
+               IF dist < delta THEN
+                  count := inFil;           (* point is fairly close to set *)
+               ELSE
+                  (* point is far from set: treat like LevelSet *)
+               END;
+            END;
+         END;
+            
+7) Biomorphs
+   I found this method on page 104 of Computers, Pattern, Chaos and Beauty [3]. 
+It's a simple method that works well with low iteration levels. The figures
+produced often resemble invertebrate lifeforms. It works by setting the color of
+a point to a special value if the real and imaginary coordinate of z are greater
+then  the bailout value. Otherwise the point is colored using the LevelSet 
+method.
+         IF count < hiCount THEN
+            IF (ABS(z.r) < bailout) OR (ABS(z.i) < bailout) THEN
+               (* treat like LevelSet *)
+            ELSE
+               count := inFil;            (* use the filament color *)
+            END;
+         END;
+            
+8) Smurf
+   This method is due to the Brainy Smurf (aka Richard Hughes). The idea is to 
+use either the real or imaginary components of z to color the image. The code 
+looks like this:
+         IF count < hiCount THEN
+            scale := bailout/ABS(z.r);       (* get a number from 0 to 1 *)
+            scale := scale^(1/4);            (* force the number closer to 1 *)
+            count := count*scale;            (* adjust count *)
+         END;
+         
+9) Periodic
+   This one works only if you are using period checking. The idea is to color
+the set based on the number of iterations it takes before a point becomes
+periodic. The period checker I use is listed below. It's designed to quickly
+catch the points that rapidly become periodic.
+         VAR
+            WasInSet: BOOLEAN;       (* TRUE if the last point was in the set *)
+            toler   : REAL;          (* x = y if ABS(x - y) < toler *)
+            Step    : INTEGER;       (* current period length *)
+            maxStep : INTEGER;       (* maximum period to check for *)
+            lastZ   : Complex;       (* z value to compare with *)
+            oldCount: CARDINAL;      (* unsigned integer *)
+         
+         PROCEDURE InitPeriodChecker;      (* Call this for each point *)
+            VAR gap: Complex;
+         BEGIN
+            IF WasInSet THEN
+               maxStep := 2;
+               Step := maxStep;      
+               lastZ.r := 0.0;
+               lastZ.i := 0.0;
+               gap.r := Size.r/FLOAT(portRect.right - portRect.left);
+               gap.i := Size.i/FLOAT(portRect.bottom - portRect.top);
+               toler := MinReal(gap.r, gap.i)/2.0;
+            END;
+         END InitPeriodChecker;
+         
+         PROCEDURE Equal (x, y: REAL): BOOLEAN;
+         BEGIN
+            RETURN ABS(x - y) < toler;
+         END Equal;
+            
+         PROCEDURE DoPeriod (z: Complex);   (* Call this for each orbit *)
+         BEGIN
+            IF WasInSet THEN
+               IF Equal(z.r, lastZ.r) AND Equal(z.i, lastZ.i) THEN
+                  oldCount := count;
+                  count := inSet;
+               ELSE
+                  INC(Step);
+                  IF Step > maxStep THEN
+                     Step := 1;
+                     maxStep := 2*maxStep;
+                     lastZ := z;
+                  END;
+               END;
+            END;
+         END DoPeriod;
+         
+The Periodic draw style code is then:
+         IF count = inSet THEN
+            count := oldCount;
+         ELSIF count >= hiCount THEN
+            count := hiCount - 1;        (* Use LastColor *)
+         ELSE
+            count := 0;                  (* Use FirstColor *)
+         END;
+ 
+10) Ratios
+   This is a simple method that turns out to work rather well. The results are
+similar to decomposition but usually more interesting. The idea is to use the
+ratio of z.r and z.i to color the image. The code looks like this:
+         IF count < hiCount THEN
+            max := Max(z.r, z.i);
+            min := Min(z.r, z.i);
+            scale := min/max;
+            count := Unity*scale;
+         END;
+   
+ 
+CHANGE HISTORY
+ 
+Version 6.0
+   1) Added Periodic draw style.
+   2) Added Ratio draw style.
+ 
+Version 5.0
+   1) Reformatted for 80 col displays. Removed tabs.
+   2) Made minor changes throughout the file.
+ 
+Version 4.0
+   1) Added a comment to the ColorSet discussion to the effect that ColorSet 
+      works best with period checking.
+   2) Changed description of Distance Estimator. Modified code so that the Level 
+      Set method is used for points far from the set.
+   3) Added Stalks, Biomorph, and Smurf draw styles.
+   4) Added bibliography.
+ 
+Version 3.1
+   1) Dropped the Binary from Binary Decomposition (since the algorithm
+      presented uses more then 2 colors).
+   
+Version 3.0
+   1) Instead of using the Remainder function ColorSet uses the fractional
+      part of Mag(z).
+   2) Continuous Potential uses a dedicated variable (slope) to do root scaling.
+   3) The Distance Estimator uses a slightly different method for indexing
+      into the palette.
+   4) The max constant has been renamed Unity.
+   
+Version 2.0
+   1) First version posted.
+   
+   
+BIBLIOGRAPHY
+ 
+[1] Peitgen, Heinz-Otto and Saupe, Dietmat editors "The Science of Fractal 
+Images", Springer-Verlag ISBN 0-387-96608-0
+ 
+[2] Pickover, Clifford "Computers and the Imagination", St. Martins Press 
+ISBN 0-312-06131-5
+ 
+[3] Pickover, Clifford "Computers, Pattern, Chaos and Beauty", St. Martins Press 
+ISBN 0-312-04123-3
+   
+   
+ADDRESS
+ 
+   Jesse Jones          
+   Usenet: jesjones@milton.u.washington.edu 
+   CServe: 73627,152
+ 
